@@ -1,0 +1,68 @@
+---
+title: "Predicting (in)correct barbell lifting"
+author: "Ed van Gasteren"
+date: "2014-12-21"
+output: html_document
+---
+
+# Synopsis
+In this project, I will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. A set of measurements is used to train (supervised i.e. known outcome) a machine learning algorithm to identify the different ways of lifting. Then the algorithm is used to predict the ways of lifting based on measurements with known but undisclosed outcome. The results show that it is very well possible to predict very accurately.
+
+# Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+# Data Processing
+I used a training (https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and testing (https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) data set.
+
+Visual inspection of the training set shows lots of "" and NA values, some numeric values as strings and some as #DIV/0!. Such values also occur in columns which, based on the header, might be expected to be numeric. For starters I decided to load the data with limited interpretation by R. I do turn the outcome into a factor to make sure that train() will do classification in stead of regression.
+```{r}
+dTrain <- read.csv("pml-training.csv", stringsAsFactors = FALSE)
+dTrain$classe <- as.factor(dTrain$classe)
+```
+
+Visual inspection of the test set, paints a similar picture including "" and NA values.
+```{r}
+dTest <- read.csv("pml-testing.csv", stringsAsFactors = FALSE)
+```
+
+R decides to turn several of the clearly numeric attributes into logicals, probably based on the fact that all values are either "" or NA. Those attributes will be of no use for predicting, so they will be of little value for training. I decided to reduce the set of attributes to work with, to those with clean numeric values related to the sensors.
+```{r}
+# Get the relevant training set attributes.
+dTrain.attributes.class <- sapply(dTrain, class)
+dTrain.attributes.numeric <- names(dTrain.attributes.class)[dTrain.attributes.class %in% c("numeric", "integer")]
+dTrain.attributes.numeric <- grep("_belt|_arm|_dumbbell|_forearm", dTrain.attributes.numeric, value = TRUE)
+
+# Get the relevant training set attributes.
+dTest.attributes.class <- sapply(dTest, class)
+dTest.attributes.numeric <- names(dTest.attributes.class)[dTest.attributes.class %in% c("numeric", "integer")]
+dTest.attributes.numeric <- grep("_belt|_arm|_dumbbell|_forearm", dTest.attributes.numeric, value = TRUE)
+
+# Intersect the attributes sets.
+TrainAndTest.attributes <- dTrain.attributes.numeric[dTrain.attributes.numeric %in% dTest.attributes.numeric]
+```
+
+The function train() can take a long time depending on the parameters and the size of the data set. Here I choose to take a first shot with the data set limited to only the complete cases (over all attributes, not just those in the formula).
+```{r, cache=TRUE}
+trainingFormula <- reformulate(TrainAndTest.attributes, "classe")
+
+library(caret)
+m <- train(trainingFormula,
+           dTrain[complete.cases(dTrain), c(TrainAndTest.attributes, "classe")]
+)
+
+m
+m$finalModel
+```
+
+# Results
+The output of the model shows that just over 400 samples are used. Considering we have close to 20000 available this was a very limited training. But even that seems to be doing pretty well. An out of bag (OOB) estimate of error rate of 21 % is reported.  That gives an upperbound for the out of sample error. So if we use the algorithm so far, we may expect at best 4 out of 5 predictions to be correct. Let's see what we predict for the test set (output not shown on purpose).
+
+```{r}
+testClassification <- predict(m, dTest)
+```
+
+As a form of cross-validation I used this test classification for the "Course Project: Submission" and got a Total Score of 15 / 20. That's 3 out of 4 which is slightly below the above mentioned 4 out of 5. 
+
+I ran train() again, this time without the complete cases restriction, so over the full training set. That takes considerable time (7 hours in my case). But in the end I got an OOB estimate of error rate of 0.45%. Using the algorithm to predict the outcome for the test set and submitting those, gave a 20 / 20 score.
